@@ -1,5 +1,6 @@
 local module = {
-	Time = {}
+	Time = {},
+	Threader = {},
 }
 
 function module.Time:DateFormatted(dateTime: DateTime?)
@@ -12,6 +13,13 @@ function module.Time:DateFormatted(dateTime: DateTime?)
 		currentDateTime.Month, 
 		currentDateTime.Year
 	)
+end
+
+function module.Threader:Fast(connection: () -> ())
+	local thread = Instance.new("BindableEvent")
+	thread.Event:Connect(connection)
+	thread:Fire()
+	thread:Destroy()
 end
 
 return module

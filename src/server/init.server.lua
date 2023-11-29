@@ -1,14 +1,13 @@
-local datastoreService = game:GetService("DataStoreService")
+local replicated = game:GetService("ReplicatedStorage")
 local players = game:GetService("Players")
 
 local database = require(script.Database)
-local datastore = datastoreService:GetDataStore("Players")
 
 players.PlayerAdded:Connect(function(player: Player)
     local playerData = database.new(player.UserId, {
         Name = player.Name,
         Key = player.UserId,
-    }, datastore)
+    }, database.datastore("Players"))
     if playerData then
         playerData:Update({ Online = true }):Save()
     end

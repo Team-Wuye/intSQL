@@ -12,6 +12,7 @@ local module = {
     Cache = {} ::{ [number]: string | number | boolean | {} },
 	CacheOld = {} ::{ [number]: string | number | boolean | {} },
     Data = {},
+	Datastores = {},
 }
 
 module.Data.__index = module.Data
@@ -43,6 +44,10 @@ function module.new(key: (number | string), template: (number | string | boolean
     module.cache(key, metaData)
 
     return metaData
+end
+
+function module.datastore(name: string)
+	return datastoreService:GetDataStore(name)
 end
 
 function module.cache(key: (number | string), value: (number | string | boolean | {}) ?): nil | (number | string | boolean | {})
