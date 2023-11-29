@@ -44,6 +44,7 @@ function module.new(key: (number | string), template: (number | string | boolean
     local metaData = setmetatable({
         Key = key,
         Value = data,
+		Versions = {},
         DataStoreName = (database and database.Name) or defaultStore.Name,
     }, module.Data)
 
@@ -54,6 +55,9 @@ end
 
 --[[
 	Retuns a datastore based on the provided name.
+
+	string @name 
+		A string specifying which datastore is to be used.
 ]]
 function module.datastore(name: string)
 	return datastoreService:GetDataStore(name)
@@ -62,35 +66,21 @@ end
 --[[
 	Caches data based on the @key, the data's value is set to @value.
 
-	@key
+	numer | string @key
 		A unique key used to identify data.
 
-	@value
+	any @value
 		The value to be set as the cache data's value.
 	
-	@value == NIL
+	nil @value
 		returns the cache based on the @key
 ]]
 function module.cache(key: (number | string), value: any?): nil | (number | string | boolean | {})
     if value then
-		if module.Cache[key] then
-			module.CacheOld[key] = module.Cache[key]
-		end
         module.Cache[key] = value
     else
         return module.Cache[key]
     end
-end
-
-function module.Data:Undo(): boolean
-	local oldValue = module.CacheOld[self.Key]
-	if oldValue then
-		self.Value = oldValue
-		return true
-	else
-		warn("Unable to undo data changes, there is no older version available.")
-		return false
-	end
 end
 
 function module.Data:Overwrite(value: (number | string | boolean | {})): {}
