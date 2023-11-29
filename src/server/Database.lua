@@ -9,10 +9,11 @@ local utility = require(replicated.Shared.Utility)
 
 local module = {
 	Soft = {},
+	Ordered = {},
     Cache = {} ::{ [number]: string | number | boolean | {} },
-	CacheOld = {} ::{ [number]: string | number | boolean | {} },
     Data = {},
 	Datastores = {},
+	OrderedDataStores = {},
 }
 
 module.Data.__index = module.Data
@@ -26,12 +27,14 @@ module.Data.__index = module.Data
 	@template
 		Default data that should be present within the data entry, if pre-existing data is found it will fold the tables.
 
-	@database
-		If provided, it will dictate which datastore is used to save the data.
+	@datastoreName
+		Case sensitive string that will determine in which datastore the data will be loaded and saved from.
+		Also sets the ordered data store which holds the keys.
 	
 ]]
-function module.new(key: (number | string), template: (number | string | boolean | {}), database: DataStore?): boolean
-	local data = get(key, database or defaultStore)
+function module.new(key: (number | string), template: (number | string | boolean | {}), datastoreName: string?): boolean
+	local datastore = if datastoreName then module.datastore(datastoreName) else nil
+	local data = get(key, datastore or defaultStore)
 	if data and typeof(data) == "table" and typeof(template) == "table" then
 		for templateKey, templateValue in pairs(template) do
 			if data[templateKey] then continue end
@@ -45,35 +48,66 @@ function module.new(key: (number | string), template: (number | string | boolean
         Key = key,
         Value = data,
 		Versions = {},
-        DataStoreName = (database and database.Name) or defaultStore.Name,
+        DataStoreName = datastoreName or defaultStore.Name,
     }, module.Data)
 
     module.cache(key, metaData)
+
+	if not module.OrderedDataStores[datastoreName] then
+		module.Ordered.datastore(datastoreName)
+	end
 
     return metaData
 end
 
 --[[
-	Retuns a datastore based on the provided name.
+	Returns, and creates, if nil, a datastore based on the provided name.
 
 	string @name 
-		A string specifying which datastore is to be used.
+		| A string specifying which datastore is to be used.
 ]]
-function module.datastore(name: string)
-	return datastoreService:GetDataStore(name)
+function module.datastore(name: string): DataStore
+	local datastore = module.Datastores[name]
+	if not datastore then
+		datastore = datastoreService:GetDataStore(name)
+		module.Datastores[name] = datastore
+	end
+
+	return datastore
+end
+
+--[[
+	Returns, and creates, if nil, an ordered datastore based on the provided name.
+
+	string @name 
+		| A string specifying which ordered datastore is to be used.
+]]
+function module.Ordered.datastore(name: string): OrderedDataStore
+	local orderedStore = module.OrderedDataStores[name]
+	if not orderedStore then
+		orderedStore = datastoreService:GetDataStore(name)
+		module.OrderedDataStores[name] = orderedStore
+	end
+
+	return orderedStore
+end
+
+
+function module.Ordered.load(name: string): Pages
+
 end
 
 --[[
 	Caches data based on the @key, the data's value is set to @value.
 
-	numer | string @key
-		A unique key used to identify data.
+	ID @key
+		| A unique key used to identify data.
 
 	any @value
-		The value to be set as the cache data's value.
+		| The value to be set as the cache data's value.
 	
 	nil @value
-		returns the cache based on the @key
+		| returns the cache based on the @key
 ]]
 function module.cache(key: (number | string), value: any?): nil | (number | string | boolean | {})
     if value then
@@ -114,7 +148,7 @@ end
 ]]--
 function module.Data:UpdateNested(variablesToChange: { [number | string]: (number | string | boolean | {}) }): {}
     local newData = self.Value
-    for keyToMatch, valueToChange in pairs(self.Value) do
+    for keyToMatch, _ in pairs(self.Value) do
         for key, value in pairs(variablesToChange) do
             if keyToMatch == key then
                 newData[key] = value
@@ -131,7 +165,10 @@ end
 function module.Data:Save(parameters: { [string]: any }?): boolean
 	self.Value = applyDefaultVariables(self.Value)
 
-	return push(self.Key, self.Value, module.datastore(self.DataStoreName))
+	local storePushSuccess = push(self.Key, self.Value, module.datastore(self.DataStoreName))
+	local orderedPushSuccess = push(self.Key, self.Value.ChangeVersion, module.orderedstore(self.DataStoreName))
+
+	return (storePushSuccess and orderedPushSuccess)
 end
 
 function get(key: (number | string), store: DataStore): (number | string | boolean | {})
@@ -146,8 +183,9 @@ function get(key: (number | string), store: DataStore): (number | string | boole
 	end
 end
 
-function push(key: number | string, value: number | string | boolean | {}, store: DataStore): boolean
-	if not store then
+function push(key: number | string, value: number | string | boolean | {}, datastore: DataStore | OrderedDataStore): boolean
+	if not datastore then
+		warn(string.format("You must provide a key ( %s ), value ( %s ), and a datastore or ordered datastore in order to push data.", tostring(datastore.Name), tostring(key)))
 		warn("You must provide a store, key, and a value in order to push data.")
 
 		return false
@@ -155,7 +193,7 @@ function push(key: number | string, value: number | string | boolean | {}, store
 
 	local success, errorMessage = pcall(function()
 		if typeof(value) == "table" then
-			store:UpdateAsync(key, function(pastData)
+			datastore:UpdateAsync(key, function(pastData)
 				local newData = pastData
 				if pastData and typeof(pastData) == "table" then
 					for newKey, newValue in pairs(value) do
@@ -166,7 +204,7 @@ function push(key: number | string, value: number | string | boolean | {}, store
 				return newData
 			end)
 		else
-			store:SetAsync(key, value)
+			datastore:SetAsync(key, value)
 		end
 	end)
 	
