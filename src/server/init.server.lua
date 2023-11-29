@@ -7,10 +7,13 @@ players.PlayerAdded:Connect(function(player: Player)
     local playerData = database.new(player.UserId, {
         Name = player.Name,
         Key = player.UserId,
-    }, database.datastore("Players"))
+    }, "Players")
     if playerData then
+        print(playerData.Value)
         playerData:Update({ Online = true }):Save()
     end
+
+    database.Ordered.load("Players")
 end)
 
 players.PlayerRemoving:Connect(function(player: Player)

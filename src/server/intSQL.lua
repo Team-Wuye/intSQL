@@ -58,9 +58,9 @@ function module:Run(commands: string)
 
     if statementName == "SELECT" then
         if queryAll then
-            database = datastore:GetDataStore(targetTableName)
+            --database = datastore:GetDataStore(targetTableName)
 
-			
+
         else
 
         end

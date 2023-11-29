@@ -9,9 +9,9 @@ local utility = require(replicated.Shared.Utility)
 
 local module = {
 	Soft = {},
-	Ordered = {},
     Cache = {} ::{ [number]: string | number | boolean | {} },
     Data = {},
+	Ordered = {},
 	Datastores = {},
 	OrderedDataStores = {},
 }
@@ -30,15 +30,21 @@ module.Data.__index = module.Data
 	@datastoreName
 		Case sensitive string that will determine in which datastore the data will be loaded and saved from.
 		Also sets the ordered data store which holds the keys.
-	
+
 ]]
 function module.new(key: (number | string), template: (number | string | boolean | {}), datastoreName: string?): boolean
-	local datastore = if datastoreName then module.datastore(datastoreName) else nil
-	local data = get(key, datastore or defaultStore)
-	if data and typeof(data) == "table" and typeof(template) == "table" then
-		for templateKey, templateValue in pairs(template) do
-			if data[templateKey] then continue end
-			data[templateKey] = templateValue
+	if not datastoreName then datastoreName = defaultStore.Name end
+	local datastore = getDataStore(datastoreName)
+	local orderedStore = getOrderedDataStore(datastoreName)
+
+	local data = get(key, datastore)
+	print(data)
+	if data then
+		if typeof(data) == "table" and typeof(template) == "table" then
+			for templateKey, templateValue in pairs(template) do
+				if data[templateKey] then continue end
+				data[templateKey] = templateValue
+			end
 		end
 	else
 		data = template
@@ -48,64 +54,72 @@ function module.new(key: (number | string), template: (number | string | boolean
         Key = key,
         Value = data,
 		Versions = {},
-        DataStoreName = datastoreName or defaultStore.Name,
+        DataStoreName = datastoreName,
     }, module.Data)
 
     module.cache(key, metaData)
 
-	if not module.OrderedDataStores[datastoreName] then
-		module.Ordered.datastore(datastoreName)
-	end
-
     return metaData
 end
 
---[[
-	Returns, and creates, if nil, a datastore based on the provided name.
-
-	string @name 
-		| A string specifying which datastore is to be used.
-]]
-function module.datastore(name: string): DataStore
-	local datastore = module.Datastores[name]
+function getDataStore(datastoreName: string): DataStore
+	local datastore = module.Datastores[datastoreName]
 	if not datastore then
-		datastore = datastoreService:GetDataStore(name)
-		module.Datastores[name] = datastore
+		datastore = datastoreService:GetDataStore(datastoreName)
+		module.Datastores[datastoreName] = datastore
 	end
 
 	return datastore
 end
 
---[[
-	Returns, and creates, if nil, an ordered datastore based on the provided name.
-
-	string @name 
-		| A string specifying which ordered datastore is to be used.
-]]
-function module.Ordered.datastore(name: string): OrderedDataStore
-	local orderedStore = module.OrderedDataStores[name]
-	if not orderedStore then
-		orderedStore = datastoreService:GetDataStore(name)
-		module.OrderedDataStores[name] = orderedStore
+function getOrderedDataStore(datastoreName: string): OrderedDataStore
+	local orderedStoreName = datastoreName .. "_Ordered"
+	local orderedDataStore = module.OrderedDataStores[orderedStoreName]
+	if not orderedDataStore then
+		orderedDataStore = datastoreService:GetOrderedDataStore(orderedStoreName)
+		module.OrderedDataStores[orderedStoreName] = orderedDataStore
 	end
 
-	return orderedStore
-end
-
-
-function module.Ordered.load(name: string): Pages
-
+	return orderedDataStore
 end
 
 --[[
-	Caches data based on the @key, the data's value is set to @value.
+	Returns, and creates, if found nil, a datastore based on the provided name.
+]]
+function module.Data:Datastore(): DataStore
+	return getDataStore(self.DataStoreName)
+end
+
+--[[
+	Returns, and creates, if found nil, an ordered datastore based on the provided name.
+]]
+function module.Data:OrderedDatastore(): OrderedDataStore
+	return getOrderedDataStore(self.DataStoreName)
+end
+
+
+function module.Ordered.load(name: string, isAscending: boolean?, pageSize: number?): Pages
+	local orderedDataStore = getOrderedDataStore(name)
+
+	local pages = orderedDataStore:GetSortedAsync(isAscending or false, pageSize or 10)
+	local pagesTable = pages:GetCurrentPage()
+
+	for rank, data in ipairs(pagesTable) do
+		local dataName = data.key
+		local points = data.value
+		print(dataName .. " is ranked #" .. rank .. " with " .. points .. " points")
+	end
+end
+
+--[[
+	Caches data based on the @key, the data's value is set to @value, unless @value is nil in which case it returns the cache.
 
 	ID @key
 		| A unique key used to identify data.
 
 	any @value
 		| The value to be set as the cache data's value.
-	
+
 	nil @value
 		| returns the cache based on the @key
 ]]
@@ -165,8 +179,8 @@ end
 function module.Data:Save(parameters: { [string]: any }?): boolean
 	self.Value = applyDefaultVariables(self.Value)
 
-	local storePushSuccess = push(self.Key, self.Value, module.datastore(self.DataStoreName))
-	local orderedPushSuccess = push(self.Key, self.Value.ChangeVersion, module.orderedstore(self.DataStoreName))
+	local storePushSuccess = push(self.Key, self.Value, self:Datastore())
+	local orderedPushSuccess = push(self.Key, self.Value.ChangeVersion, self:OrderedDatastore())
 
 	return (storePushSuccess and orderedPushSuccess)
 end
@@ -185,20 +199,21 @@ end
 
 function push(key: number | string, value: number | string | boolean | {}, datastore: DataStore | OrderedDataStore): boolean
 	if not datastore then
-		warn(string.format("You must provide a key ( %s ), value ( %s ), and a datastore or ordered datastore in order to push data.", tostring(datastore.Name), tostring(key)))
-		warn("You must provide a store, key, and a value in order to push data.")
+		warn(string.format("You must provide a key ( %s ), value ( %s ), and a datastore or ordered datastore ( nil ) in order to push data.", tostring(key), tostring(value)))
 
 		return false
 	end
 
 	local success, errorMessage = pcall(function()
-		if typeof(value) == "table" then
+		if typeof(value) == "table" and datastore:IsA("DataStore") then
 			datastore:UpdateAsync(key, function(pastData)
 				local newData = pastData
 				if pastData and typeof(pastData) == "table" then
 					for newKey, newValue in pairs(value) do
 						newData[newKey] = newValue
 					end
+				else
+					return value
 				end
 
 				return newData
@@ -207,8 +222,9 @@ function push(key: number | string, value: number | string | boolean | {}, datas
 			datastore:SetAsync(key, value)
 		end
 	end)
-	
+
 	if success then
+		warn("Saved", value, "To", key)
 		return true
 	else
 		warn(value)
@@ -225,18 +241,18 @@ function applyDefaultVariables(t: {}): {}
 		else
 			t.ChangeVersion = 1
 		end
-		
+
 		local formatedDateTime = utility.Time:DateFormatted()
-		
+
 		t["UpdatedAt"] = formatedDateTime
-		
+
 		if not t["CreatedAt"] then
 			t["CreatedAt"] = formatedDateTime
 		end
 	else
 		warn("To apply default variables, the provided t variable must be of type table.")
 	end
-	
+
 	return t
 end
 
