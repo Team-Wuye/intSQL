@@ -17,13 +17,19 @@ local module = {
 
 module.Data.__index = module.Data
 
---//
---** Creates a new table of data based on a required key and schema template.
---** It checks first to see if data is stored under the same key, and within the same store if provided. If success, it returns that data. Else, create new.
---** The function filterExistingData will fire and use existingData as its arguement, allowing one to change data upon retrieval and before load. 
---** This existingData table may be mutated or altered, but it must be returned by the filterExistingData function.
---** Returns true upon success and false upon failure.
---||
+--[[
+	First it attempts to load data using the @key, if none could be loaded it builds new data using the @template.
+
+	@key
+		A unique key used to identify data.
+
+	@template
+		Default data that should be present within the data entry, if pre-existing data is found it will fold the tables.
+
+	@database
+		If provided, it will dictate which datastore is used to save the data.
+	
+]]
 function module.new(key: (number | string), template: (number | string | boolean | {}), database: DataStore?): boolean
 	local data = get(key, database or defaultStore)
 	if data and typeof(data) == "table" and typeof(template) == "table" then
@@ -46,11 +52,26 @@ function module.new(key: (number | string), template: (number | string | boolean
     return metaData
 end
 
+--[[
+	Retuns a datastore based on the provided name.
+]]
 function module.datastore(name: string)
 	return datastoreService:GetDataStore(name)
 end
 
-function module.cache(key: (number | string), value: (number | string | boolean | {}) ?): nil | (number | string | boolean | {})
+--[[
+	Caches data based on the @key, the data's value is set to @value.
+
+	@key
+		A unique key used to identify data.
+
+	@value
+		The value to be set as the cache data's value.
+	
+	@value == NIL
+		returns the cache based on the @key
+]]
+function module.cache(key: (number | string), value: any?): nil | (number | string | boolean | {})
     if value then
 		if module.Cache[key] then
 			module.CacheOld[key] = module.Cache[key]
@@ -120,7 +141,7 @@ end
 function module.Data:Save(parameters: { [string]: any }?): boolean
 	self.Value = applyDefaultVariables(self.Value)
 
-	return push(self.Key, self.Value, datastoreService:GetDataStore(self.DataStoreName))
+	return push(self.Key, self.Value, module.datastore(self.DataStoreName))
 end
 
 function get(key: (number | string), store: DataStore): (number | string | boolean | {})
