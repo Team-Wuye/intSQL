@@ -9,7 +9,6 @@ players.PlayerAdded:Connect(function(player: Player)
         Key = player.UserId,
     }, "Players")
     if playerData then
-        print(playerData.Value)
         playerData:Update({ Online = true }):Save()
     end
 

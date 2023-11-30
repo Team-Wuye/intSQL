@@ -1,7 +1,7 @@
-local datastoreService = game:GetService("DataStoreService")
+local dataStoreService = game:GetService("DataStoreService")
 local replicated = game:GetService("ReplicatedStorage")
 
-local defaultStore = datastoreService:GetDataStore("Default")
+local defaultStore = dataStoreService:GetDataStore("Default")
 
 local utility = require(replicated.Shared.Utility)
 
@@ -12,33 +12,33 @@ local module = {
     Cache = {} ::{ [number]: string | number | boolean | {} },
     Data = {},
 	Ordered = {},
-	Datastores = {},
-	OrderedDataStores = {},
+	DataStores = {},
+	OrderedDataStores = {
+		["Global"] = dataStoreService:GetDataStore("OrderedDataStores")
+	},
 }
 
 module.Data.__index = module.Data
 
 --[[
-	First it attempts to load data using the @key, if none could be loaded it builds new data using the @template.
+	| First it attempts to load data using the @key, if none could be loaded it builds new data using the @template.
 
 	@key
-		A unique key used to identify data.
+		| A unique key used to identify data.
 
 	@template
-		Default data that should be present within the data entry, if pre-existing data is found it will fold the tables.
+		| Default data that should be present within the data entry, if pre-existing data is found it will fold the tables.
 
-	@datastoreName
-		Case sensitive string that will determine in which datastore the data will be loaded and saved from.
-		Also sets the ordered data store which holds the keys.
+	@dataStoreName
+		| Case sensitive string that will determine in which dataStore the data will be loaded from and saved to.
+		| Also sets the ordered data store which holds the keys.
 
 ]]
-function module.new(key: (number | string), template: (number | string | boolean | {}), datastoreName: string?): boolean
-	if not datastoreName then datastoreName = defaultStore.Name end
-	local datastore = getDataStore(datastoreName)
-	local orderedStore = getOrderedDataStore(datastoreName)
+function module.new(key: (number | string), template: (number | string | boolean | {}), dataStoreName: string?): { [string]: any }
+	if not dataStoreName then dataStoreName = defaultStore.Name end
+	local dataStore, _ = getDataStore(tostring(dataStoreName)), getOrderedDataStore(tostring(dataStoreName))
 
-	local data = get(key, datastore)
-	print(data)
+	local data = get(key, dataStore)
 	if data then
 		if typeof(data) == "table" and typeof(template) == "table" then
 			for templateKey, templateValue in pairs(template) do
@@ -47,6 +47,7 @@ function module.new(key: (number | string), template: (number | string | boolean
 			end
 		end
 	else
+		warn("Database was unable to load data located under the specified key, using template instead. Key: ", key)
 		data = template
     end
 
@@ -54,7 +55,7 @@ function module.new(key: (number | string), template: (number | string | boolean
         Key = key,
         Value = data,
 		Versions = {},
-        DataStoreName = datastoreName,
+        DataStoreName = dataStoreName,
     }, module.Data)
 
     module.cache(key, metaData)
@@ -62,21 +63,55 @@ function module.new(key: (number | string), template: (number | string | boolean
     return metaData
 end
 
-function getDataStore(datastoreName: string): DataStore
-	local datastore = module.Datastores[datastoreName]
-	if not datastore then
-		datastore = datastoreService:GetDataStore(datastoreName)
-		module.Datastores[datastoreName] = datastore
-	end
+--[[
+	| Stores the @key @value pair's using the provided ordered DataStore, found with @orderedDataStoreName.
 
-	return datastore
+	number @key
+		| A unique key used to identify data.
+
+	string @key
+
+
+	number @value
+		| The value attached to the key.
+
+	string @orderedDataStoreName
+		| Case sensitive string that will determine in which ordered dataStore the data will be loaded from and saved to.
+		| Also sets the ordered data store which holds the key for all ordered dataStores.
+
+]]
+function module.Ordered.new(key: (number | string), orderedDataStoreName: string): { [string]: any }
+	if not orderedDataStoreName then orderedDataStoreName = module.OrderedDataStores.Global.Name end
+	local orderedStore = getOrderedDataStore(orderedDataStoreName)
+
+    local metaData = setmetatable({
+        Key = key,
+        Value = 1,
+		Versions = {},
+        DataStoreName = orderedStore.Name,
+		Type = "OrderedDataStore",
+    }, module.Data)
+
+    module.cache(key, metaData)
+
+    return metaData
 end
 
-function getOrderedDataStore(datastoreName: string): OrderedDataStore
-	local orderedStoreName = datastoreName .. "_Ordered"
+function getDataStore(dataStoreName: string): DataStore
+	local dataStore = module.DataStores[dataStoreName]
+	if not dataStore then
+		dataStore = dataStoreService:GetDataStore(dataStoreName)
+		module.DataStores[dataStoreName] = dataStore
+	end
+
+	return dataStore
+end
+
+function getOrderedDataStore(dataStoreName: string): OrderedDataStore
+	local orderedStoreName = dataStoreName .. "_Ordered"
 	local orderedDataStore = module.OrderedDataStores[orderedStoreName]
 	if not orderedDataStore then
-		orderedDataStore = datastoreService:GetOrderedDataStore(orderedStoreName)
+		orderedDataStore = dataStoreService:GetOrderedDataStore(orderedStoreName)
 		module.OrderedDataStores[orderedStoreName] = orderedDataStore
 	end
 
@@ -84,21 +119,21 @@ function getOrderedDataStore(datastoreName: string): OrderedDataStore
 end
 
 --[[
-	Returns, and creates, if found nil, a datastore based on the provided name.
+	Returns, and creates, if found nil, a dataStore based on the provided name.
 ]]
-function module.Data:Datastore(): DataStore
+function module.Data:DataStore(): DataStore
 	return getDataStore(self.DataStoreName)
 end
 
 --[[
-	Returns, and creates, if found nil, an ordered datastore based on the provided name.
+	Returns, and creates, if found nil, an ordered dataStore based on the provided name.
 ]]
-function module.Data:OrderedDatastore(): OrderedDataStore
+function module.Data:OrderedDataStore(): OrderedDataStore
 	return getOrderedDataStore(self.DataStoreName)
 end
 
 
-function module.Ordered.load(name: string, isAscending: boolean?, pageSize: number?): Pages
+function module.Ordered.get(name: string, isAscending: boolean?, pageSize: number?): Pages?
 	local orderedDataStore = getOrderedDataStore(name)
 
 	local pages = orderedDataStore:GetSortedAsync(isAscending or false, pageSize or 10)
@@ -109,6 +144,8 @@ function module.Ordered.load(name: string, isAscending: boolean?, pageSize: numb
 		local points = data.value
 		print(dataName .. " is ranked #" .. rank .. " with " .. points .. " points")
 	end
+
+	return
 end
 
 --[[
@@ -123,9 +160,10 @@ end
 	nil @value
 		| returns the cache based on the @key
 ]]
-function module.cache(key: (number | string), value: any?): nil | (number | string | boolean | {})
+function module.cache(key: (string | number), value: any?): (number | string | boolean | {})
     if value then
         module.Cache[key] = value
+		return true
     else
         return module.Cache[key]
     end
@@ -175,38 +213,53 @@ function module.Data:UpdateNested(variablesToChange: { [number | string]: (numbe
 end
 
 
+function module.Data:Find(variablesToFind): boolean | {}
+	local variablesFound = {}
+	for key, value in pairs(self.Value) do
+		if variablesToFind[key] then
+			variablesFound[key] = value
+			continue
+		end
+	end
+
+	return if variablesFound == {} then false else variablesFound
+end
+
 
 function module.Data:Save(parameters: { [string]: any }?): boolean
 	self.Value = applyDefaultVariables(self.Value)
 
-	local storePushSuccess = push(self.Key, self.Value, self:Datastore())
-	local orderedPushSuccess = push(self.Key, self.Value.ChangeVersion, self:OrderedDatastore())
+	local orderedDataStorePushSuccess = push(self.Key, self.Value.ChangeVersion, self:OrderedDataStore())
+	if "OrderedDataStore" == self.Type then
+		return orderedDataStorePushSuccess
+	end
 
-	return (storePushSuccess and orderedPushSuccess)
+	local dataStorePushSuccess = push(self.Key, self.Value, self:DataStore())
+	return dataStorePushSuccess
 end
 
 function get(key: (number | string), store: DataStore): (number | string | boolean | {})
 	local success, data = pcall(function()
-		return store:GetAsync(key)
+		return store:GetAsync(tostring(key))
 	end)
 	if success then
 		return data
 	else
-		warn(string.format("There was an issue loading data from %s based on the key: %i", store.Name, key))
+		warn(string.format("There was an issue while running get data from %s based on the key: %s", (store and store.Name), tostring(key)))
 		return false
 	end
 end
 
-function push(key: number | string, value: number | string | boolean | {}, datastore: DataStore | OrderedDataStore): boolean
-	if not datastore then
-		warn(string.format("You must provide a key ( %s ), value ( %s ), and a datastore or ordered datastore ( nil ) in order to push data.", tostring(key), tostring(value)))
+function push(key: number | string, value: number | string | boolean | {}, dataStore: DataStore | OrderedDataStore): boolean
+	if not dataStore then
+		warn(string.format("You must provide a key ( %s ), value ( %s ), and a dataStore or ordered dataStore ( nil ) in order to push data.", tostring(key), tostring(value)))
 
 		return false
 	end
 
 	local success, errorMessage = pcall(function()
-		if typeof(value) == "table" and datastore:IsA("DataStore") then
-			datastore:UpdateAsync(key, function(pastData)
+		if typeof(value) == "table" and dataStore:IsA("DataStore") then
+			dataStore:UpdateAsync(tostring(key), function(pastData)
 				local newData = pastData
 				if pastData and typeof(pastData) == "table" then
 					for newKey, newValue in pairs(value) do
@@ -219,12 +272,12 @@ function push(key: number | string, value: number | string | boolean | {}, datas
 				return newData
 			end)
 		else
-			datastore:SetAsync(key, value)
+			dataStore:SetAsync(key, value)
 		end
 	end)
 
 	if success then
-		warn("Saved", value, "To", key)
+		warn("Saved data:", value, "to", key, "in datastore:", dataStore.Name)
 		return true
 	else
 		warn(value)
@@ -237,9 +290,9 @@ end
 function applyDefaultVariables(t: {}): {}
 	if typeof(t) == "table" then
 		if t["ChangeVersion"] then
-			t.ChangeVersion += 1
+			t["ChangeVersion"] += 1
 		else
-			t.ChangeVersion = 1
+			t["ChangeVersion"] = 1
 		end
 
 		local formatedDateTime = utility.Time:DateFormatted()
@@ -257,8 +310,8 @@ function applyDefaultVariables(t: {}): {}
 end
 
 function versionMatch(t: {}, t2: {}): boolean
-	if t.ChangeVersion and t2.ChangeVersion then
-		return (t.ChangeVersion <= t2.ChangeVersion)
+	if t["ChangeVersion"] and t2["ChangeVersion"] then
+		return (t["ChangeVersion"] <= t2["ChangeVersion"])
 	else
 		return false
 	end
