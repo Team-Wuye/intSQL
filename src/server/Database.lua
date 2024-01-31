@@ -71,10 +71,6 @@ end
 
 	string @key
 
-
-	number @value
-		| The value attached to the key.
-
 	string @orderedDataStoreName
 		| Case sensitive string that will determine in which ordered dataStore the data will be loaded from and saved to.
 		| Also sets the ordered data store which holds the key for all ordered dataStores.
@@ -132,7 +128,9 @@ function module.Data:OrderedDataStore(): OrderedDataStore
 	return getOrderedDataStore(self.DataStoreName)
 end
 
-
+--[[
+	Incomplete
+]]
 function module.Ordered.get(name: string, isAscending: boolean?, pageSize: number?): Pages?
 	local orderedDataStore = getOrderedDataStore(name)
 
@@ -197,6 +195,8 @@ end
     Slower version of self:Update().
     Searches through self.Value to find any variables with the same name as ones in variablesToChange.
     If it finds a match, set the self.Value's matched variables' value to the value from the matched variable in variablesToChange.
+
+    I am aware that recursive function calls could've been used here.
 ]]--
 function module.Data:UpdateNested(variablesToChange: { [number | string]: (number | string | boolean | {}) }): {}
     local newData = self.Value
@@ -213,7 +213,7 @@ function module.Data:UpdateNested(variablesToChange: { [number | string]: (numbe
 end
 
 
-function module.Data:Find(variablesToFind): boolean | {}
+function module.Data:Find(variablesToFind: { [string | number]: (number | string | boolean | {}) }): boolean | {}
 	local variablesFound = {}
 	for key, value in pairs(self.Value) do
 		if variablesToFind[key] then
@@ -222,7 +222,7 @@ function module.Data:Find(variablesToFind): boolean | {}
 		end
 	end
 
-	return if variablesFound == {} then false else variablesFound
+	return if #variablesFound == 0 then false else variablesFound
 end
 
 
