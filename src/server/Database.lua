@@ -22,6 +22,7 @@ module.Data.__index = module.Data
 
 --[[
 	| First it attempts to load data using the @key, if none could be loaded it builds new data using the @template.
+	| If data was loaded but it differs from the provided template the missing entries will be added.
 
 	@key
 		| A unique key used to identify data.
