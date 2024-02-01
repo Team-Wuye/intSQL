@@ -22,7 +22,6 @@ module.Data.__index = module.Data
 
 --[[
 	| First it attempts to load data using the @key, if none could be loaded it builds new data using the @template.
-	| If data was loaded but it differs from the provided template the missing entries will be added.
 
 	@key
 		| A unique key used to identify data.
@@ -36,8 +35,11 @@ module.Data.__index = module.Data
 
 ]]
 function module.new(key: (number | string), template: (number | string | boolean | {}), dataStoreName: string?): { [string]: any }
-	if not dataStoreName then dataStoreName = defaultStore.Name end
-	local dataStore, _ = getDataStore(tostring(dataStoreName)), getOrderedDataStore(tostring(dataStoreName))
+	if not dataStoreName then 
+		dataStoreName = defaultStore.Name 
+	
+	end
+	local dataStore = getDataStore(tostring(dataStoreName))
 
 	local data = get(key, dataStore)
 	if data then
@@ -48,7 +50,6 @@ function module.new(key: (number | string), template: (number | string | boolean
 			end
 		end
 	else
-		warn("Database was unable to load data located under the specified key, using template instead. Key: ", key)
 		data = template
     end
 
